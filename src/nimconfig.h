@@ -106,12 +106,12 @@
 /** @brief Un-comment if not using NimBLE Server functions \n
  *  Reduces flash size by approx. 16kB.
  */
-// #define CONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED
+ #define CONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED
 
 /** @brief Un-comment if not using NimBLE Advertising functions \n
  *  Reduces flash size by approx. 5kB.
  */
-// #define CONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED
+ #define CONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED
 
 /** @brief Un-comment to change the number of devices allowed to store/bond with */
 // #define CONFIG_BT_NIMBLE_MAX_BONDS 3
