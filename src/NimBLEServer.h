@@ -18,10 +18,8 @@
 #include "nimconfig.h"
 #if defined(CONFIG_BT_ENABLED) && defined(CONFIG_BT_NIMBLE_ROLE_PERIPHERAL)
 
-#define NIMBLE_ATT_REMOVE_HIDE 1
-#define NIMBLE_ATT_REMOVE_DELETE 2
-
-#define onMtuChanged onMTUChange
+class NimBLEServer;
+class NimBLEServerCallbacks;
 
 #include "NimBLEUtils.h"
 #include "NimBLEAddress.h"
@@ -31,14 +29,13 @@
 #include "NimBLEAdvertising.h"
 #endif
 #include "NimBLEService.h"
-#include "NimBLESecurity.h"
+#include "NimBLECharacteristic.h"
 #include "NimBLEConnInfo.h"
 
+#define NIMBLE_ATT_REMOVE_HIDE 1
+#define NIMBLE_ATT_REMOVE_DELETE 2
 
-class NimBLEService;
-class NimBLECharacteristic;
-class NimBLEServerCallbacks;
-
+#define onMtuChanged onMTUChange
 
 /**
  * @brief The model of a %BLE server.
@@ -59,9 +56,9 @@ public:
                                             int max_events = 0);
     bool                   stopAdvertising(uint8_t inst_id);
 #endif
-#if !CONFIG_BT_NIMBLE_EXT_ADV || defined(_DOXYGEN_)
+#  if !CONFIG_BT_NIMBLE_EXT_ADV || defined(_DOXYGEN_)
     NimBLEAdvertising*     getAdvertising();
-    bool                   startAdvertising();
+    bool                   startAdvertising(uint32_t duration = 0);
 #endif
     bool                   stopAdvertising();
     void                   start();
@@ -69,6 +66,8 @@ public:
     NimBLEService*         getServiceByUUID(const NimBLEUUID &uuid, uint16_t instanceId = 0);
     NimBLEService*         getServiceByHandle(uint16_t handle);
     int                    disconnect(uint16_t connID,
+                                      uint8_t reason = BLE_ERR_REM_USER_CONN_TERM);
+    int                    disconnect(const NimBLEConnInfo &connInfo,
                                       uint8_t reason = BLE_ERR_REM_USER_CONN_TERM);
     void                   updateConnParams(uint16_t conn_handle,
                                             uint16_t minInterval, uint16_t maxInterval,
@@ -79,6 +78,8 @@ public:
     NimBLEConnInfo         getPeerInfo(size_t index);
     NimBLEConnInfo         getPeerInfo(const NimBLEAddress& address);
     NimBLEConnInfo         getPeerIDInfo(uint16_t id);
+    std::string            getPeerName(const NimBLEConnInfo& connInfo);
+    void                   getPeerNameOnConnect(bool enable);
 #if !CONFIG_BT_NIMBLE_EXT_ADV || defined(_DOXYGEN_)
     void                   advertiseOnDisconnect(bool);
 #endif
@@ -99,6 +100,7 @@ private:
 #if !CONFIG_BT_NIMBLE_EXT_ADV
     bool                   m_advertiseOnDisconnect;
 #endif
+    bool                   m_getPeerNameOnConnect;
     bool                   m_svcChanged;
     NimBLEServerCallbacks* m_pServerCallbacks;
     bool                   m_deleteCallbacks;
@@ -111,10 +113,17 @@ private:
     std::vector<NimBLECharacteristic*> m_notifyChrVec;
 
     static int             handleGapEvent(struct ble_gap_event *event, void *arg);
+    static int             peerNameCB(uint16_t conn_handle, const struct ble_gatt_error *error,
+                                      struct ble_gatt_attr *attr, void *arg);
+    std::string            getPeerNameInternal(uint16_t conn_handle, TaskHandle_t task, int cb_type = -1);
     void                   serviceChanged();
     void                   resetGATT();
     bool                   setIndicateWait(uint16_t conn_handle);
     void                   clearIndicateWait(uint16_t conn_handle);
+
+    static int             handleGattEvent(uint16_t conn_handle, uint16_t attr_handle,
+                                           struct ble_gatt_access_ctxt *ctxt, void *arg);
+
 }; // NimBLEServer
 
 
@@ -129,64 +138,81 @@ public:
      * @brief Handle a client connection.
      * This is called when a client connects.
      * @param [in] pServer A pointer to the %BLE server that received the client connection.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information.
+     * about the peer connection parameters.
      */
-    virtual void onConnect(NimBLEServer* pServer);
+    virtual void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo);
 
     /**
      * @brief Handle a client connection.
      * This is called when a client connects.
      * @param [in] pServer A pointer to the %BLE server that received the client connection.
-     * @param [in] desc A pointer to the connection description structure containig information
-     * about the connection parameters.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information.
+     * @param [in] name The name of the connected peer device.
+     * about the peer connection parameters.
      */
-    virtual void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc);
+    virtual void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, std::string& name);
 
     /**
-     * @brief Handle a client disconnection.
-     * This is called when a client disconnects.
-     * @param [in] pServer A reference to the %BLE server that received the existing client disconnection.
-     */
-    virtual void onDisconnect(NimBLEServer* pServer);
-
-     /**
      * @brief Handle a client disconnection.
      * This is called when a client discconnects.
      * @param [in] pServer A pointer to the %BLE server that received the client disconnection.
-     * @param [in] desc A pointer to the connection description structure containing information
-     * about the connection.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information
+     * about the peer connection parameters.
+     * @param [in] reason The reason code for the disconnection.
      */
-    virtual void onDisconnect(NimBLEServer* pServer, ble_gap_conn_desc* desc);
+    virtual void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason);
 
-     /**
+    /**
      * @brief Called when the connection MTU changes.
      * @param [in] MTU The new MTU value.
-     * @param [in] desc A pointer to the connection description structure containing information
-     * about the connection.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information
+     * about the peer connection parameters.
      */
-    virtual void onMTUChange(uint16_t MTU, ble_gap_conn_desc* desc);
+    virtual void onMTUChange(uint16_t MTU, NimBLEConnInfo& connInfo);
 
     /**
-     * @brief Called when a client requests a passkey for pairing.
+     * @brief Called when a client requests a passkey for pairing (display).
      * @return The passkey to be sent to the client.
      */
-    virtual uint32_t onPassKeyRequest();
-
-    //virtual void onPassKeyNotify(uint32_t pass_key);
-    //virtual bool onSecurityRequest();
-
-    /**
-     * @brief Called when the pairing procedure is complete.
-     * @param [in] desc A pointer to the struct containing the connection information.\n
-     * This can be used to check the status of the connection encryption/pairing.
-     */
-    virtual void onAuthenticationComplete(ble_gap_conn_desc* desc);
+    virtual uint32_t onPassKeyDisplay();
 
     /**
      * @brief Called when using numeric comparision for pairing.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information
+     * Should be passed back to NimBLEDevice::injectConfirmPasskey
      * @param [in] pin The pin to compare with the client.
-     * @return True to accept the pin.
      */
-    virtual bool onConfirmPIN(uint32_t pin);
+    virtual void onConfirmPassKey(NimBLEConnInfo& connInfo, uint32_t pin);
+
+    /**
+     * @brief Called when the pairing procedure is complete.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information
+     * about the peer connection parameters.
+     */
+    virtual void onAuthenticationComplete(NimBLEConnInfo& connInfo);
+
+    /**
+     * @brief Called when the pairing procedure is complete.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information
+     * @param [in] name The name of the connected peer device.
+     * about the peer connection parameters.
+     */
+    virtual void onAuthenticationComplete(NimBLEConnInfo& connInfo, const std::string& name);
+
+    /**
+     * @brief Called when the peer identity address is resolved.
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance with information
+     */
+    virtual void onIdentity(NimBLEConnInfo& connInfo);
+
+    /**
+     * @brief Called when connection parameters are updated following a request to
+     * update via NimBLEServer::updateConnParams
+     * @param [in] connInfo A reference to a NimBLEConnInfo instance containing the
+     * updated connection parameters.
+     */
+    virtual void onConnParamsUpdate(NimBLEConnInfo& connInfo);
 }; // NimBLEServerCallbacks
 
 #endif /* CONFIG_BT_ENABLED && CONFIG_BT_NIMBLE_ROLE_PERIPHERAL */

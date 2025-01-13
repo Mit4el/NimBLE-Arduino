@@ -17,13 +17,16 @@
  * under the License.
  */
 
+#include "nimconfig.h"
+#if !defined(ESP_NIMBLE_CONTROLLER_ENABLED)
+
 #include <assert.h>
 #include "../include/os/os.h"
 #include "../include/mem/mem.h"
 #include "../include/sysinit/sysinit.h"
 
-#ifdef ESP_PLATFORM
 #include "nimble/esp_port/port/include/esp_nimble_mem.h"
+#ifdef ESP_PLATFORM
 #include "esp_err.h"
 #endif
 
@@ -159,6 +162,10 @@ os_msys_buf_alloc(void)
 #if OS_MSYS_2_BLOCK_COUNT > 0
     os_msys_init_2_data = (os_membuf_t *)nimble_platform_mem_calloc(1, (sizeof(os_membuf_t) * SYSINIT_MSYS_2_MEMPOOL_SIZE));
     if (!os_msys_init_2_data) {
+#if OS_MSYS_1_BLOCK_COUNT > 0
+       nimble_platform_mem_free(os_msys_init_1_data);
+       os_msys_init_1_data = NULL;
+#endif
         return ESP_FAIL;
     }
 #endif
@@ -216,3 +223,4 @@ void os_msys_init(void)
     SYSINIT_PANIC_ASSERT(rc == 0);
 #endif
 }
+#endif

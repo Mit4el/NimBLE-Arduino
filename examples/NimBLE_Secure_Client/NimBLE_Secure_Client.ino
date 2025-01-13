@@ -12,9 +12,9 @@
 
 class ClientCallbacks : public NimBLEClientCallbacks
 {
-  uint32_t onPassKeyRequest()
+  uint32_t onPassKeyEntry()
   {
-    Serial.println("Client Passkey Request");
+    Serial.println("Client Passkey Entry");
     /** return the passkey to send to the server */
     /** Change this to be different from NimBLE_Secure_Server if you want to test what happens on key mismatch */
     return 123456;
@@ -36,7 +36,7 @@ void setup()
   NimBLEDevice::setSecurityAuth(true, true, true);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_KEYBOARD_ONLY);
   NimBLEScan *pScan = NimBLEDevice::getScan();
-  NimBLEScanResults results = pScan->start(5);
+  NimBLEScanResults results = pScan->getResults(5 * 1000);
 
   NimBLEUUID serviceUuid("ABCD");
 

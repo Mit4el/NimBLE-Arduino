@@ -10,50 +10,23 @@
 #if defined(CONFIG_BT_ENABLED)
 
 #include "NimBLEUtils.h"
+#include "NimBLEAddress.h"
 #include "NimBLELog.h"
+
+# if defined(CONFIG_NIMBLE_CPP_IDF)
+#  include "host/ble_hs.h"
+# else
+#  include "nimble/nimble/host/include/host/ble_hs.h"
+# endif
+
+/****  FIX COMPILATION ****/
+#undef min
+#undef max
+/**************************/
 
 #include <stdlib.h>
 
 static const char* LOG_TAG = "NimBLEUtils";
-
-
-/**
- * @brief A function for checking validity of connection parameters.
- * @param [in] params A pointer to the structure containing the parameters to check.
- * @return valid == 0 or error code.
- */
-int NimBLEUtils::checkConnParams(ble_gap_conn_params* params) {
-    /* Check connection interval min */
-    if ((params->itvl_min < BLE_HCI_CONN_ITVL_MIN) ||
-        (params->itvl_min > BLE_HCI_CONN_ITVL_MAX)) {
-        return BLE_ERR_INV_HCI_CMD_PARMS;
-    }
-    /* Check connection interval max */
-    if ((params->itvl_max < BLE_HCI_CONN_ITVL_MIN) ||
-        (params->itvl_max > BLE_HCI_CONN_ITVL_MAX) ||
-        (params->itvl_max < params->itvl_min)) {
-        return BLE_ERR_INV_HCI_CMD_PARMS;
-    }
-
-    /* Check connection latency */
-    if (params->latency > BLE_HCI_CONN_LATENCY_MAX) {
-        return BLE_ERR_INV_HCI_CMD_PARMS;
-    }
-
-    /* Check supervision timeout */
-    if ((params->supervision_timeout < BLE_HCI_CONN_SPVN_TIMEOUT_MIN) ||
-        (params->supervision_timeout > BLE_HCI_CONN_SPVN_TIMEOUT_MAX)) {
-        return BLE_ERR_INV_HCI_CMD_PARMS;
-    }
-
-    /* Check connection event length */
-    if (params->min_ce_len > params->max_ce_len) {
-        return BLE_ERR_INV_HCI_CMD_PARMS;
-    }
-
-    return 0;
-}
-
 
 /**
  * @brief Converts a return code from the NimBLE stack to a text string.
@@ -514,5 +487,21 @@ const char* NimBLEUtils::gapEventToString(uint8_t eventType) {
     return "";
 #endif // #if defined(CONFIG_NIMBLE_CPP_ENABLE_GAP_EVENT_CODE_TEXT)
 } // gapEventToString
+
+/**
+ * @brief Generate a random BLE address.
+ * @param [in] nrpa True to generate a non-resolvable private address,
+ * false to generate a random static address
+ * @return The generated address or a NULL address if there was an error.
+ */
+NimBLEAddress NimBLEUtils::generateAddr(bool nrpa) {
+    ble_addr_t addr{};
+    int rc = ble_hs_id_gen_rnd(nrpa, &addr);
+    if (rc != 0) {
+        NIMBLE_LOGE(LOG_TAG, "Generate address failed, rc=%d", rc);
+    }
+
+    return NimBLEAddress{addr};
+} // generateAddr
 
 #endif //CONFIG_BT_ENABLED

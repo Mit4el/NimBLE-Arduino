@@ -10,12 +10,10 @@
 
 #include <NimBLEDevice.h>
 
-void scanEndedCB(NimBLEScanResults results);
-
 static NimBLEAdvertisedDevice* advDevice;
 
 static bool doConnect = false;
-static uint32_t scanTime = 0; /** 0 = scan forever */
+static uint32_t scanTime = 0 * 1000; // In milliseconds, 0 = scan forever
 
 
 /**  None of these are required as they will be handled by the library with defaults. **
@@ -32,10 +30,10 @@ class ClientCallbacks : public NimBLEClientCallbacks {
         pClient->updateConnParams(120,120,0,60);
     };
 
-    void onDisconnect(NimBLEClient* pClient) {
-        Serial.print(pClient->getPeerAddress().toString().c_str());
-        Serial.println(" Disconnected - Starting scan");
-        NimBLEDevice::getScan()->start(scanTime, scanEndedCB);
+    void onDisconnect(NimBLEClient* pClient, int reason) {
+        Serial.printf("%s Disconnected, reason = %d - Starting scan\n",
+                      pClient->getPeerAddress().toString().c_str(), reason);
+        NimBLEDevice::getScan()->start(scanTime);
     };
 
     /** Called when the peripheral requests a change to the connection parameters.
@@ -58,33 +56,34 @@ class ClientCallbacks : public NimBLEClientCallbacks {
 
     /********************* Security handled here **********************
     ****** Note: these are the same return values as defaults ********/
-    uint32_t onPassKeyRequest(){
-        Serial.println("Client Passkey Request");
-        /** return the passkey to send to the server */
-        return 123456;
+    void onPassKeyEntry(NimBLEConnInfo& connInfo){
+        Serial.println("Server Passkey Entry");
+        /** This should prompt the user to enter the passkey displayed
+         * on the peer device.
+         */
+        NimBLEDevice::injectPassKey(connInfo, 123456);
     };
 
-    bool onConfirmPIN(uint32_t pass_key){
-        Serial.print("The passkey YES/NO number: ");
-        Serial.println(pass_key);
-    /** Return false if passkeys don't match. */
-        return true;
+    void onConfirmPasskey(NimBLEConnInfo& connInfo, uint32_t pass_key){
+        Serial.print("The passkey YES/NO number: ");Serial.println(pass_key);
+        /** Inject false if passkeys don't match. */
+        NimBLEDevice::injectConfirmPasskey(connInfo, true);
     };
 
-    /** Pairing process complete, we can check the results in ble_gap_conn_desc */
-    void onAuthenticationComplete(ble_gap_conn_desc* desc){
-        if(!desc->sec_state.encrypted) {
+    /** Pairing process complete, we can check the results in connInfo */
+    void onAuthenticationComplete(NimBLEConnInfo& connInfo){
+        if(!connInfo.isEncrypted()) {
             Serial.println("Encrypt connection failed - disconnecting");
             /** Find the client with the connection handle provided in desc */
-            NimBLEDevice::getClientByID(desc->conn_handle)->disconnect();
+            NimBLEDevice::getClientByHandle(connInfo.getConnHandle())->disconnect();
             return;
         }
-    };
+    }
 };
 
 
 /** Define a class to handle the callbacks when advertisments are received */
-class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
+class scanCallbacks: public NimBLEScanCallbacks {
 
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
         Serial.print("Advertised Device found: ");
@@ -99,7 +98,12 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             /** Ready to connect now */
             doConnect = true;
         }
-    };
+    }
+
+    /** Callback to process the results of the completed scan or restart it */
+    void onScanEnd(NimBLEScanResults results) {
+        Serial.println("Scan Ended");
+    }
 };
 
 
@@ -108,16 +112,11 @@ void notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData,
     std::string str = (isNotify == true) ? "Notification" : "Indication";
     str += " from ";
     /** NimBLEAddress and NimBLEUUID have std::string operators */
-    str += std::string(pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress());
+    str += std::string(pRemoteCharacteristic->getClient()->getPeerAddress());
     str += ": Service = " + std::string(pRemoteCharacteristic->getRemoteService()->getUUID());
     str += ", Characteristic = " + std::string(pRemoteCharacteristic->getUUID());
     str += ", Value = " + std::string((char*)pData, length);
     Serial.println(str.c_str());
-}
-
-/** Callback to process the results of the last scan or restart it */
-void scanEndedCB(NimBLEScanResults results){
-    Serial.println("Scan Ended");
 }
 
 
@@ -130,7 +129,7 @@ bool connectToServer() {
     NimBLEClient* pClient = nullptr;
 
     /** Check if we have a client we should reuse first **/
-    if(NimBLEDevice::getClientListSize()) {
+    if(NimBLEDevice::getCreatedClientCount()) {
         /** Special case when we already know this device, we send false as the
          *  second argument in connect() to prevent refreshing the service database.
          *  This saves considerable time and power.
@@ -153,7 +152,7 @@ bool connectToServer() {
 
     /** No client to reuse? Create a new one. */
     if(!pClient) {
-        if(NimBLEDevice::getClientListSize() >= NIMBLE_MAX_CONNECTIONS) {
+        if(NimBLEDevice::getCreatedClientCount() >= NIMBLE_MAX_CONNECTIONS) {
             Serial.println("Max clients reached - no more connections available");
             return false;
         }
@@ -169,8 +168,8 @@ bool connectToServer() {
          *  Min interval: 12 * 1.25ms = 15, Max interval: 12 * 1.25ms = 15, 0 latency, 51 * 10ms = 510ms timeout
          */
         pClient->setConnectionParams(12,12,0,51);
-        /** Set how long we are willing to wait for the connection to complete (seconds), default is 30. */
-        pClient->setConnectTimeout(5);
+        /** Set how long we are willing to wait for the connection to complete (milliseconds), default is 30000. */
+        pClient->setConnectTimeout(5 * 1000);
 
 
         if (!pClient->connect(advDevice)) {
@@ -228,9 +227,9 @@ bool connectToServer() {
                 }
             }
 
-            /** registerForNotify() has been deprecated and replaced with subscribe() / unsubscribe().
-             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr, response=false.
-             *  Unsubscribe parameter defaults are: response=false.
+            /** registerForNotify() has been removed and replaced with subscribe() / unsubscribe().
+             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr.
+             *  Unsubscribe takes no parameters.
              */
             if(pChr->canNotify()) {
                 //if(!pChr->registerForNotify(notifyCB)) {
@@ -293,9 +292,9 @@ bool connectToServer() {
                 }
             }
 
-            /** registerForNotify() has been deprecated and replaced with subscribe() / unsubscribe().
-             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr, response=false.
-             *  Unsubscribe parameter defaults are: response=false.
+            /** registerForNotify() has been removed and replaced with subscribe() / unsubscribe().
+             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr, response=true.
+             *  Unsubscribe parameter defaults are: response=true.
              */
             if(pChr->canNotify()) {
                 //if(!pChr->registerForNotify(notifyCB)) {
@@ -360,7 +359,7 @@ void setup (){
     NimBLEScan* pScan = NimBLEDevice::getScan();
 
     /** create a callback that gets called when advertisers are found */
-    pScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks());
+    pScan->setScanCallbacks(new scanCallbacks());
 
     /** Set scan interval (how often) and window (how long) in milliseconds */
     pScan->setInterval(45);
@@ -373,7 +372,7 @@ void setup (){
     /** Start scanning for advertisers for the scan time specified (in seconds) 0 = forever
      *  Optional callback for when scanning stops.
      */
-    pScan->start(scanTime, scanEndedCB);
+    pScan->start(scanTime);
 }
 
 
@@ -392,5 +391,5 @@ void loop (){
         Serial.println("Failed to connect, starting scan");
     }
 
-    NimBLEDevice::getScan()->start(scanTime,scanEndedCB);
+    NimBLEDevice::getScan()->start(scanTime);
 }

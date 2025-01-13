@@ -29,7 +29,6 @@
 #include "ble_hs_hci_priv.h"
 #include "ble_hs_atomic_priv.h"
 #include "ble_hs_conn_priv.h"
-#include "ble_hs_atomic_priv.h"
 #include "ble_hs_mbuf_priv.h"
 #include "ble_hs_startup_priv.h"
 #include "ble_l2cap_priv.h"
@@ -43,9 +42,11 @@
 #include "ble_hs_periodic_sync_priv.h"
 #include "ble_uuid_priv.h"
 #include "nimble/nimble/host/include/host/ble_hs.h"
-#include "nimble/nimble/host/include/host/ble_monitor.h"
 #include "nimble/nimble/include/nimble/nimble_opt.h"
 #include "nimble/porting/nimble/include/stats/stats.h"
+#if MYNEWT_VAL(BLE_GATT_CACHING)
+#include "ble_gattc_cache_priv.h"
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -108,7 +109,7 @@ void ble_hs_wakeup_tx(void);
 void ble_hs_enqueue_hci_event(uint8_t *hci_evt);
 void ble_hs_event_enqueue(struct os_event *ev);
 
-int ble_hs_hci_rx_evt(uint8_t *hci_ev, void *arg);
+int ble_hs_hci_rx_evt_ovr(uint8_t *hci_ev, void *arg);
 int ble_hs_hci_evt_acl_process(struct os_mbuf *om);
 
 int ble_hs_misc_conn_chan_find(uint16_t conn_handle, uint16_t cid,

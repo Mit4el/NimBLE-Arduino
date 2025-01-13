@@ -66,7 +66,7 @@ If false the service is only removed from visibility by clients. The pointers to
 # Advertising
 `NimBLEAdvertising::start`
 
-Now takes 2 optional parameters, the first is the duration to advertise for (in seconds), the second is a callback that is invoked when advertising ends and takes a pointer to a `NimBLEAdvertising` object (similar to the `NimBLEScan::start` API).
+Now takes 2 optional parameters, the first is the duration to advertise for (in milliseconds), the second is a callback that is invoked when advertising ends and takes a pointer to a `NimBLEAdvertising` object (similar to the `NimBLEScan::start` API).
 
 This provides an opportunity to update the advertisement data if desired.
 
@@ -96,12 +96,13 @@ struct my_struct{
 ```
 <br/>
 
-`NimBLERemoteCharacteristic::registerForNotify`
-Has been **deprecated** as now the internally stored characteristic value is updated when notification/indication is received.
+`NimBLERemoteCharacteristic::registerForNotify`  
+Has been removed.
 
-`NimBLERemoteCharacteristic::subscribe` and `NimBLERemoteCharacteristic::unsubscribe` have been implemented to replace it.
-A callback is no longer required to get the most recent value unless timing is important. Instead, the application can call `NimBLERemoteCharacteristic::getValue` to get the last updated value any time.  
-<br/>
+`NimBLERemoteCharacteristic::subscribe` and `NimBLERemoteCharacteristic::unsubscribe` have been implemented to replace it.  
+
+The internally stored characteristic value is now updated when notification/indication is recieved. Making a callback no longer required to get the most recent value unless timing is important. Instead, the application can call `NimBLERemoteCharacteristic::getValue` to get the most recent value any time.  
+<br/>  
 
 The `notify_callback` function is now defined as a `std::function` to take advantage of using `std::bind` to specify a class member function for the callback.
 
